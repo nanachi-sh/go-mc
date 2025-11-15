@@ -71,7 +71,7 @@ func index(buffer bytes.Buffer) (int, int) {
 			continue
 		}
 		// 数据包完整性检查
-		if int(l) < buffer.Len()-i {
+		if buffer.Len()-i < int(l) {
 			return i, -1
 		}
 		return i, int(l)
