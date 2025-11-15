@@ -3,11 +3,13 @@ package parse
 import (
 	"bytes"
 	"fmt"
+	"sync"
 
 	"github.com/nanachi-sh/go-mc/util"
 )
 
 type Parser struct {
+	lock    sync.Mutex
 	buffer  bytes.Buffer
 	logined bool
 	ch      chan *ServerResponse
@@ -25,6 +27,8 @@ func NewParser() *Parser {
 }
 
 func (p *Parser) Put(b []byte) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 	p.buffer.Write(b)
 	p.parse()
 }
@@ -34,23 +38,29 @@ func (p *Parser) Read() *ServerResponse {
 }
 
 func (p *Parser) parse() {
-	if p.logined {
-		v, err := p.parsePlay()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if v != nil {
-			go func() { p.ch <- &ServerResponse{Play: v} }()
-		}
-	} else {
-		v, err := p.parseLogin()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if v != nil {
-			go func() { p.ch <- &ServerResponse{Login: v} }()
+	for {
+		if p.logined {
+			v, err := p.parsePlay()
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			if v != nil {
+				go func() { p.ch <- &ServerResponse{Play: v} }()
+			} else {
+				break
+			}
+		} else {
+			v, err := p.parseLogin()
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			if v != nil {
+				go func() { p.ch <- &ServerResponse{Login: v} }()
+			} else {
+				break
+			}
 		}
 	}
 }

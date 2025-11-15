@@ -14,3 +14,7 @@ func PutVarint(i int) []byte {
 func ReadVarint(b []byte) (uint64, error) {
 	return binary.ReadUvarint(bytes.NewBuffer(b))
 }
+
+func Int(i int) *int {
+	return &i
+}

@@ -2,6 +2,7 @@ package bot
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	_net "net"
 	"strconv"
@@ -10,17 +11,20 @@ import (
 	"github.com/nanachi-sh/go-mc/bot/parse"
 	"github.com/nanachi-sh/go-mc/constants"
 	"github.com/nanachi-sh/go-mc/net"
+	"github.com/nanachi-sh/go-mc/util"
 )
 
 type Client struct {
-	once sync.Once
+	parse *parse.Parser
+	conn  *net.Conn
+	once  sync.Once
 
 	forge_info *Forge
-	conn       *net.Conn
+	dialed     bool
 	address    string
 	username   string
 	uuid       string
-	parse      *parse.Parser
+	funcs      []func(parse.ServerResponse)
 }
 
 func NewClient(address string, opts ...Option) (*Client, error) {
@@ -33,6 +37,14 @@ func NewClient(address string, opts ...Option) (*Client, error) {
 		v.Merge(c)
 	}
 	return c, nil
+}
+
+func (c *Client) Register(f func(parse.ServerResponse)) error {
+	if !c.dialed {
+		return errors.New("请先连接服务器")
+	}
+	c.funcs = append(c.funcs, f)
+	return nil
 }
 
 func (c *Client) Dial() error {
@@ -120,22 +132,45 @@ func (c *Client) dial() (err error) {
 			if _, err := c.conn.Write(constants.CPlguinMessage, constants.FMLHS); err != nil {
 				panic(err)
 			}
+		} else {
+			c.parse.Read()
 		}
 		// 登录完毕
+		c.dialed = true
+		go c.back()
 	})
 	return
 }
 
 func (c *Client) SendMessage(msg string) error {
 	data := []byte{}
-	data = append(data, byte(len(msg)))
+	data = append(data, util.PutVarint(len(msg))...)
 	data = append(data, []byte(msg)...)
 	_, err := c.conn.Write(constants.CChatMessage, data)
 	return err
 }
 
+func (c *Client) back() {
+	for {
+		resp := c.parse.Read()
+		for _, v := range c.funcs {
+			go v(*resp)
+		}
+		switch {
+		case resp.Play.KeepAlive != nil:
+			a := make([]byte, 4)
+			binary.BigEndian.PutUint32(a, uint32(*resp.Play.KeepAlive))
+			if _, err := c.conn.Write(constants.CKeepAlive, a); err != nil {
+				panic(err)
+			}
+		}
+	}
+}
+
 func (c *Client) listen() {
-	b := make([]byte, 4096)
+	base := 1024
+	size := base
+	b := make([]byte, size)
 	for {
 		n, err := c.conn.Read(b)
 		if err != nil {
@@ -143,11 +178,16 @@ func (c *Client) listen() {
 				panic(err)
 			}
 		}
+		if n == size {
+			size *= 2
+		} else {
+			size = base
+		}
 		if n == 0 {
 			continue
 		}
 		c.parse.Put(b[:n])
-		b = make([]byte, 4096)
+		b = make([]byte, size)
 	}
 }
 
