@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,10 +26,33 @@ func main() {
 	if err := cli.Dial(); err != nil {
 		panic(err)
 	}
-	fmt.Println(len(randomStr(100)))
-	if err := cli.SendMessage(`你好，
-高兴见到你`); err != nil {
-		panic(err)
+
+	text := []rune("你好，很高兴见到你，不知道今天你的心情如何呢？我今知伟大我的娃福娃发问题不知道啊" + randomStr(125))
+	sli := []string{}
+	l := 0.0
+MAIN:
+	for {
+		// fmt.Println(string(text))
+		for i, v := range text {
+			if v > 255 {
+				l += 2.5
+			} else {
+				l++
+			}
+			if l >= 99 {
+				sli = append(sli, string(text[:i]))
+				text = slices.Delete(text, 0, i)
+				l = 0
+				continue MAIN
+			}
+		}
+		sli = append(sli, string(text))
+		break
+	}
+	for _, v := range sli {
+		if err := cli.SendMessage(string(v)); err != nil {
+			panic(err)
+		}
 	}
 	cli.Register(func(sr parse.ServerResponse) {
 		if sr.Play.ChatMessage != nil {
